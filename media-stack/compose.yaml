@@ -64,7 +64,10 @@ services:
       - PGID=${PGID}
       - TZ=${TZ}
       - WEBUI_PORT=8080
-      - TORRENTING_PORT=${FIREWALL_VPN_INPUT_PORTS}
+      # Kein TORRENTING_PORT: Bei ProtonVPN ist der weitergeleitete Port
+      # dynamisch und ändert sich bei jedem Reconnect. Gluetun holt ihn
+      # per NAT-PMP und setzt ihn über die qBittorrent-API (siehe .env,
+      # VPN_PORT_FORWARDING_UP_COMMAND).
     volumes:
       - /mnt/user/appdata/qbittorrent:/config
       - /mnt/user/media:/data

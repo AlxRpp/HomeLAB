@@ -233,7 +233,171 @@ Heim-IP kommen.
 
 ---
 
-## 5. Dateien
+## 5. VPN-Tunnel prüfen — Runbook
+
+Der wichtigste Abschnitt dieser Datei. **Kein Downloader läuft, bevor
+diese Tests durch sind.**
+
+### Das Prinzip
+
+qBittorrent und NZBGet haben über `network_mode: service:gluetun`
+**kein eigenes Netzwerk-Interface**. Sie leihen sich den Netzwerk-Namespace
+von gluetun. Es existiert physisch keine zweite Route nach draußen.
+
+Das ist stärker als ein VPN-Client mit Kill-Switch-Häkchen: dort ist der
+Kill-Switch eine Firewall-Regel, die greifen *soll*. Hier gibt es
+schlicht kein Netzwerk, wenn der Tunnel weg ist.
+
+Trotzdem prüfen. Vertrauen ist keine Verifikation.
+
+### Welche IP darf herauskommen?
+
+| IP | Bedeutung |
+|---|---|
+| Eine ProtonVPN-IP | richtig — der Tunnel trägt |
+| **Deine Heim-IP** | **Alarm. Sofort alles stoppen.** |
+| Timeout / keine Antwort | richtig, wenn der Tunnel absichtlich unten ist |
+
+**Die Heim-IP nicht auswendig lernen.** Sie ändert sich bei den meisten
+Anschlüssen täglich. Die belastbare Regel ist ein **Vergleich**: Was der
+Unraid-Host sieht, darf nie identisch sein mit dem, was ein Container im
+gluetun-Namespace sieht.
+
+### Schnell-Check
+
+Der eine Befehl, den man sich merkt:
+
+```bash
+docker run --rm --network=container:gluetun alpine \
+  wget -qO- --timeout=8 https://1.1.1.1/cdn-cgi/trace | grep ^ip=
+```
+
+`1.1.1.1` ist bewusst eine **IP-Adresse, kein Name** — der Test kommt
+damit ohne DNS aus. Und `/cdn-cgi/trace` gibt die öffentliche IP des
+Aufrufers zurück, man braucht also keinen zweiten Dienst.
+
+Als Vergleich mit automatischer Bewertung:
+
+```bash
+HOST_IP=$(curl -s https://ipinfo.io/ip)
+VPN_IP=$(docker run --rm --network=container:gluetun alpine \
+  wget -qO- --timeout=8 https://1.1.1.1/cdn-cgi/trace | grep ^ip= | cut -d= -f2)
+echo "Host: $HOST_IP"
+echo "VPN:  $VPN_IP"
+[ "$HOST_IP" = "$VPN_IP" ] && echo ">>> ALARM: identisch!" || echo ">>> OK: unterschiedlich"
+```
+
+### Die vier Tests
+
+**Test 1 — Grundlage: unterscheiden sich Host und Tunnel?**
+
+```bash
+curl -s https://ipinfo.io/ip                    # Unraid-Host
+docker logs gluetun | grep "Public IP address"  # im Tunnel
+```
+
+Erwartung: zwei verschiedene IPs. Sind sie gleich, geht gar nichts durch
+den Tunnel.
+
+---
+
+**Test 2 — gilt das auch für andere Container?**
+
+```bash
+docker run --rm --network=container:gluetun alpine wget -qO- https://ipinfo.io/ip
+```
+
+Erwartung: die VPN-IP. Das ist der eigentlich relevante Test, denn genau
+so hängen qBittorrent und NZBGet später am Tunnel — als fremde Container
+im selben Namespace.
+
+---
+
+**Test 3 — Tunnel bricht, Container lebt weiter.**
+
+Der realistische Störfall: WLAN zuckt, Proton-Server überlastet,
+Reconnect. Der Container läuft weiter, nur der Tunnel ist tot. Schlecht
+gebaute Setups laden hier still über die Heim-IP weiter.
+
+```bash
+docker exec gluetun ip link set tun0 down && \
+docker run --rm --network=container:gluetun alpine \
+  wget -qO- --timeout=8 https://1.1.1.1/cdn-cgi/trace; echo " EXIT: $?"
+```
+
+Erwartung: `wget: download timed out`, Exit `1`.
+
+Alles in **einer** Zeile, weil gluetun den Tunnel nach wenigen Sekunden
+selbst wieder hochzieht (`Restart VPN on healthcheck failure: yes`).
+
+> **Warum `1.1.1.1` und nicht `ipinfo.io`?**
+> Mit einem Namen schlägt der Test schon an der DNS-Auflösung fehl
+> (`wget: bad address`). Das beweist nur, dass DNS tot ist — nicht, dass
+> keine Route existiert. Erst der direkte Zugriff auf eine IP-Adresse
+> zeigt, dass es **überhaupt keinen Weg nach draußen** gibt.
+
+---
+
+**Test 4 — repariert er sich selbst?**
+
+```bash
+sleep 45; docker run --rm --network=container:gluetun alpine \
+  wget -qO- --timeout=8 https://1.1.1.1/cdn-cgi/trace | grep ^ip=
+```
+
+Erwartung: wieder eine Proton-IP. Oft eine **andere** als vorher, weil
+gluetun sich einen neuen Server sucht. Das ist gewollt — und bedeutet
+gleichzeitig, dass der weitergeleitete Port ein anderer ist.
+
+---
+
+**Test 5 — der echte Torrent-Test.** *(offen, Schritt 4)*
+
+Die Tests 1–4 prüfen HTTP. BitTorrent meldet sich bei Trackern über
+andere Ports und Protokolle. Solange dieser Test fehlt, ist der Tunnel
+für Torrent-Verkehr **nicht verifiziert**:
+
+Über `ipleak.net` (Bereich *Torrent Address detection*) einen Magnet-Link
+holen, in qBittorrent laden, und auf der Seite prüfen, welche IP sich beim
+Tracker angemeldet hat. Muss die Proton-IP sein.
+
+### Ergebnis vom 17.08.2026
+
+Getestet in der Unraid-Test-VM, gluetun mit ProtonVPN/WireGuard.
+
+| Test | Ergebnis |
+|---|---|
+| 1 — Host vs. Tunnel | bestanden: Host `92.208.x.x`, Tunnel `79.135.105.206` (Marseille) |
+| 2 — fremder Container | bestanden: `79.135.105.206` |
+| 3 — Tunnel unten | bestanden: Timeout, Exit 1, **kein Leck** |
+| 4 — Selbstheilung | bestanden: nach ~45 s wieder da, neuer Server |
+| 5 — Torrent | **offen** |
+
+Ebenfalls bestätigt: `port forwarded is 51773` — NAT-PMP funktioniert,
+der Proton-Schlüssel wurde also korrekt mit aktiviertem Port-Forwarding
+erzeugt.
+
+### Was die Tests nicht beweisen
+
+Ehrlichkeit über die Grenzen, sonst wiegt das Runbook in falscher Sicherheit:
+
+- **Torrent-Verkehr** — siehe Test 5, steht aus.
+- **Reboot-Verhalten** — `depends_on` gilt nur bei `docker compose up`,
+  nicht bei Dockers eigener Restart-Policy nach einem Neustart des Hosts.
+  Muss separat geprüft werden.
+- **Dauerbetrieb** — eine Messung beweist nichts über drei Monate.
+
+### Wann wiederholen
+
+- nach jeder Änderung an `compose.yaml` oder `.env`
+- nach `docker compose pull` (neues gluetun-Image)
+- nach jedem Neustart der Unraid-Maschine
+- nach einem Wechsel des VPN-Anbieters oder -Servers
+- sonst etwa monatlich, mindestens der Schnell-Check
+
+---
+
+## 6. Dateien
 
 Beides liegt in `media-stack/`:
 
@@ -253,7 +417,7 @@ enthält deinen VPN-Key. Beim Ablegen entsprechend behandeln.
 
 ---
 
-## 6. Reihenfolge bei der Umsetzung
+## 7. Reihenfolge bei der Umsetzung
 
 Nicht alles auf einmal. Nach jedem Schritt prüfen, ob er hält.
 
@@ -287,9 +451,18 @@ Nicht alles auf einmal. Nach jedem Schritt prüfen, ob er hält.
 
 ---
 
-## 7. Offene Punkte
+## 8. Offene Punkte
 
-- [ ] VPN-Anbieter wählen: ProtonVPN Plus (dynamisch) oder AirVPN (statisch)
+- [x] ~~VPN-Anbieter wählen~~ — **ProtonVPN**, 17.08.2026. WireGuard,
+      `VPN_PORT_FORWARDING=on` + `PORT_FORWARD_ONLY=on`. Getestet, siehe Abschnitt 5
+- [ ] **Test 5 (Torrent-IP) nachholen** — bis dahin ist der Tunnel für
+      Torrent-Verkehr nicht verifiziert
+- [ ] Reboot-Verhalten prüfen: kommt qBittorrent nach einem Neustart der
+      Unraid-Maschine wirklich erst nach gluetun hoch?
+- [ ] `HEALTH_VPN_DURATION_INITIAL` aus der `.env` entfernen — gluetun
+      meldet die Variable als obsolet
+- [ ] MTU: gluetun setzt in der Test-VM 999 statt der üblichen ~1420.
+      Auf der echten Hardware erneut prüfen, kostet sonst Durchsatz
 - [ ] Download-Weg festlegen: Torrent, Usenet oder beides.
       Bei reinem Usenet fliegen qBittorrent und deunhealth raus,
       dafür kommen Provider- und Indexer-Kosten (~50–100 €/Jahr)
@@ -305,7 +478,7 @@ Nicht alles auf einmal. Nach jedem Schritt prüfen, ob er hält.
 
 ---
 
-## 8. Was in `00-fundament.md` angepasst werden muss
+## 9. Was in `00-fundament.md` angepasst werden muss
 
 1. **Abschnitt 5 (Ordnerstruktur)** — `media/downloads/` mit den
    Unterordnern `qbittorrent/` und `nzbget/` ergänzen, plus einem Satz
@@ -329,3 +502,4 @@ Nicht alles auf einmal. Nach jedem Schritt prüfen, ob er hält.
 | Datum | Änderung |
 |---|---|
 | 17.08.2026 | Erstfassung. TechHut-Vorlage gesichtet und für Unraid angepasst (PUID 99:100, absolute appdata-Pfade, CIFS/LXC-Teile gestrichen). Hardlink-Problematik als zentraler Planungspunkt dokumentiert. Jellyseerr → Seerr korrigiert. VPN-Anbieter recherchiert, noch nicht entschieden. |
+| 17.08.2026 | **ProtonVPN gewählt** (dynamischer Port via NAT-PMP, gluetun unterstützt das nativ). Gluetun in der Test-VM aufgesetzt, Tests 1–4 bestanden. Neuer Abschnitt 5 als Runbook, Rest neu nummeriert. `TORRENTING_PORT` aus der `compose.yaml` entfernt — bei Proton ist der Port dynamisch. |
