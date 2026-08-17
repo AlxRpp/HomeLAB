@@ -1,0 +1,81 @@
+# ---------------------------------------------------------------------
+# Geheimnisse — die wichtigsten Zeilen dieser Datei
+# ---------------------------------------------------------------------
+# Ein einmal committeter Key ist in der History. Nach einem Push hilft
+# nur noch: Key rotieren. Deshalb steht das hier ganz oben.
+
+# Docker-Umgebungsvariablen (WireGuard-Private-Key, API-Tokens, Passwörter)
+.env
+*.env
+!*.env.example
+!.env.example
+
+# WireGuard-Konfigurationen vom VPN-Anbieter — enthalten den Private Key
+*.conf
+wg*.conf
+
+# Schlüssel und Zertifikate aller Art
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+secrets/
+
+# ---------------------------------------------------------------------
+# Daten, die nicht in ein Doku-Repo gehören
+# ---------------------------------------------------------------------
+# Paperless-Exporte enthalten die echten Dokumente (Ausweise, Verträge,
+# Kontoauszüge) plus manifest.json. Niemals hier hinein.
+export/
+exports/
+manifest.json
+*.sqlite3
+*.db
+
+# Unraid-Flash-Backups (enthalten die komplette Systemkonfiguration)
+*flash-backup*
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+
+# Container-Daten, falls versehentlich hier abgelegt
+appdata/
+gluetun/
+qbittorrent/
+sonarr/
+radarr/
+lidarr/
+bazarr/
+prowlarr/
+nzbget/
+seerr/
+jellyfin/
+
+# ---------------------------------------------------------------------
+# Betriebssystem und Editoren
+# ---------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+desktop.ini
+
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.claude/
+
+# ---------------------------------------------------------------------
+# Temporäres
+# ---------------------------------------------------------------------
+*.tmp
+*.bak
+*.orig
+*.log
