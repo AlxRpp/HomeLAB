@@ -351,15 +351,22 @@ gleichzeitig, dass der weitergeleitete Port ein anderer ist.
 
 ---
 
-**Test 5 — der echte Torrent-Test.** *(offen, Schritt 4)*
+**Test 5 — der echte Torrent-Test.**
 
 Die Tests 1–4 prüfen HTTP. BitTorrent meldet sich bei Trackern über
-andere Ports und Protokolle. Solange dieser Test fehlt, ist der Tunnel
-für Torrent-Verkehr **nicht verifiziert**:
+andere Ports und Protokolle — ohne diesen Test ist der Tunnel für
+Torrent-Verkehr **nicht verifiziert**.
 
-Über `ipleak.net` (Bereich *Torrent Address detection*) einen Magnet-Link
-holen, in qBittorrent laden, und auf der Seite prüfen, welche IP sich beim
-Tracker angemeldet hat. Muss die Proton-IP sein.
+Auf `ipleak.net` im Bereich *Torrent Address detection* den Magnet-Link
+holen und in qBittorrent laden. ipleak betreibt einen eigenen Tracker und
+protokolliert, von welcher IP sich der Client anmeldet. Nach ein paar
+Sekunden erscheint sie auf der Seite. Es wird nichts heruntergeladen, der
+Torrent ist eine Attrappe.
+
+> **Zwei IPs, nicht verwechseln.** Ganz oben zeigt die Seite die IP deines
+> **Browsers** — also des Macs, der nicht über VPN läuft. Die ist richtig
+> und darf deine Heim-IP sein. Nur die Zeile unter *Torrent Address
+> detection* zählt, das ist qBittorrent im Container.
 
 ### Ergebnis vom 17.08.2026
 
@@ -371,7 +378,7 @@ Getestet in der Unraid-Test-VM, gluetun mit ProtonVPN/WireGuard.
 | 2 — fremder Container | bestanden: `79.135.105.206` |
 | 3 — Tunnel unten | bestanden: Timeout, Exit 1, **kein Leck** |
 | 4 — Selbstheilung | bestanden: nach ~45 s wieder da, neuer Server |
-| 5 — Torrent | **offen** |
+| 5 — Torrent | bestanden: ipleak.net meldet `217.138.216.105`, also die Proton-IP |
 
 Ebenfalls bestätigt: `port forwarded is 51773` — NAT-PMP funktioniert,
 der Proton-Schlüssel wurde also korrekt mit aktiviertem Port-Forwarding
@@ -455,12 +462,11 @@ Nicht alles auf einmal. Nach jedem Schritt prüfen, ob er hält.
 
 - [x] ~~VPN-Anbieter wählen~~ — **ProtonVPN**, 17.08.2026. WireGuard,
       `VPN_PORT_FORWARDING=on` + `PORT_FORWARD_ONLY=on`. Getestet, siehe Abschnitt 5
-- [ ] **Test 5 (Torrent-IP) nachholen** — bis dahin ist der Tunnel für
-      Torrent-Verkehr nicht verifiziert
+- [x] ~~Test 5 (Torrent-IP)~~ — bestanden am 17.08.2026
+- [x] ~~`HEALTH_VPN_DURATION_INITIAL` entfernen~~ — erledigt, war obsolet
 - [ ] Reboot-Verhalten prüfen: kommt qBittorrent nach einem Neustart der
-      Unraid-Maschine wirklich erst nach gluetun hoch?
-- [ ] `HEALTH_VPN_DURATION_INITIAL` aus der `.env` entfernen — gluetun
-      meldet die Variable als obsolet
+      Unraid-Maschine wirklich erst nach gluetun hoch? `depends_on` gilt
+      nur bei `docker compose up`, nicht bei Dockers Restart-Policy
 - [ ] MTU: gluetun setzt in der Test-VM 999 statt der üblichen ~1420.
       Auf der echten Hardware erneut prüfen, kostet sonst Durchsatz
 - [ ] Download-Weg festlegen: Torrent, Usenet oder beides.
@@ -502,4 +508,5 @@ Nicht alles auf einmal. Nach jedem Schritt prüfen, ob er hält.
 | Datum | Änderung |
 |---|---|
 | 17.08.2026 | Erstfassung. TechHut-Vorlage gesichtet und für Unraid angepasst (PUID 99:100, absolute appdata-Pfade, CIFS/LXC-Teile gestrichen). Hardlink-Problematik als zentraler Planungspunkt dokumentiert. Jellyseerr → Seerr korrigiert. VPN-Anbieter recherchiert, noch nicht entschieden. |
+| 17.08.2026 | qBittorrent aufgesetzt, Test 5 (Torrent-IP über ipleak.net) bestanden. Dynamisches Port-Forwarding über `VPN_PORT_FORWARDING_UP_COMMAND` eingerichtet — die Befehle stehen in `.env.example`, damit sie versioniert sind, da die echte `.env` bewusst nicht ins Repo geht. |
 | 17.08.2026 | **ProtonVPN gewählt** (dynamischer Port via NAT-PMP, gluetun unterstützt das nativ). Gluetun in der Test-VM aufgesetzt, Tests 1–4 bestanden. Neuer Abschnitt 5 als Runbook, Rest neu nummeriert. `TORRENTING_PORT` aus der `compose.yaml` entfernt — bei Proton ist der Port dynamisch. |
