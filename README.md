@@ -1,7 +1,12 @@
 # HomeLAB
 
-Planung und Dokumentation eines Homelabs auf Unraid-Basis. Langfristiges
-Ziel ist ein lokaler Sprachassistent („Jarvis") als steuerndes Gehirn.
+Ein Homelab auf Unraid-Basis. Langfristiges Ziel ist ein lokaler
+Sprachassistent („Jarvis“) als steuerndes Gehirn.
+
+Das Repo ist zweierlei. **Planung** für das, was noch nicht steht: Server,
+Speicher, Backup-Kette. Und **Dokumentation eines laufenden Systems** für
+das, was seit September 2025 in Betrieb ist: die Hausautomation mit rund 200
+Geräten, Sensor-Zeitreihen und einer Modellanbindung über MCP.
 
 Dieses Repo ist die **einzige Quelle der Wahrheit** für Entscheidungen und
 Konfiguration. Was hier nicht steht, ist nicht entschieden.
@@ -13,15 +18,27 @@ Konfiguration. Was hier nicht steht, ist nicht entschieden.
 **→ [`00-fundament.md`](00-fundament.md)** — Zielbild, Entscheidungen,
 Hardware, Backup-Strategie. Alles andere hängt daran.
 
+**→ [`04-hausautomation.md`](04-hausautomation.md)** — was heute läuft.
+Geräte je Protokoll, Zeitreihen, Automationen samt der Fehlversuche
+dahinter, MCP-Anbindung, offene Punkte.
+
 ## Dateien
+
+Sortiert nach Relevanz, nicht nach Nummer.
 
 | Datei | Inhalt |
 |---|---|
 | [`00-fundament.md`](00-fundament.md) | Grundlage. Ziel, Entscheidungen samt Begründung, Hardware, Ordnerstruktur, Backup, Reihenfolge |
+| [`04-hausautomation.md`](04-hausautomation.md) | Home Assistant, in Betrieb. Geräte je Protokoll, Recorder und Zeitreihen, Automationen mit Begründung, MCP-Anbindung, offene Punkte |
 | [`01-testumgebung.md`](01-testumgebung.md) | Unraid-Test-VM auf Proxmox. Stick-GUID, VM-Parameter, Testplan |
 | [`02-paperless.md`](02-paperless.md) | Paperless-ngx. Architektur, Konfiguration, Export/Import, Backup |
-| [`03-media.md`](03-media.md) | Servarr-Stack und Jellyfin. Geplant, nicht installiert |
-| `media-stack/` | Lauffähige Konfiguration zu `03-media.md` |
+
+### Weiteres
+
+| Datei | Inhalt |
+|---|---|
+| [`media/03-media.md`](media/03-media.md) | Servarr-Stack und Jellyfin. Geplant, nicht installiert |
+| `media/media-stack/` | Lauffähige Konfiguration zu `03-media.md` |
 
 ## Nummerierung
 
@@ -29,8 +46,10 @@ Hardware, Backup-Strategie. Alles andere hängt daran.
 der sie entstanden sind — **nicht** in der Reihenfolge der Umsetzung.
 Die steht in `00-fundament.md`, Abschnitt 7.
 
-Kein Unterordner, solange es nicht wehtut. Vier Dateien brauchen keine
-Verzeichnisstruktur.
+Bis August 2026 stand hier: kein Unterordner, solange es nicht wehtut.
+Mit `media/` gibt es jetzt einen. Grund: Dort gehören eine Datei und ein
+Konfigurationsverzeichnis zusammen, und beides ist ein Randthema. Für die
+durchnummerierten Dateien bleibt es bei flacher Ablage.
 
 ---
 
@@ -66,7 +85,7 @@ nicht Löschen.
 Was **nicht** ins Repo gehört, aber trotzdem gesichert sein muss
 (→ `00-fundament.md`, Abschnitt 6, „Schlüssel sind Teil des Backups"):
 
-- `media-stack/.env` — WireGuard-Private-Key
+- `media/media-stack/.env` — WireGuard-Private-Key
 - `PAPERLESS_SECRET_KEY`
 - Unraid-Flash-Backup
 
