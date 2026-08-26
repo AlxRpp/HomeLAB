@@ -4,7 +4,8 @@
 Paperless stehen. Offen: Flash-Backup und Restore-Test.
 Gehört zu Schritt 1 aus `00-fundament.md`, Abschnitt 7.
 
-**Zugriff:** `http://192.168.178.156` (DHCP) · Unraid 7.3.2
+**Zugriff:** `http://<unraid-ip>` — per DHCP vergeben, Adresse im
+Router nachsehen · Unraid 7.3.2
 
 ---
 
@@ -205,7 +206,7 @@ einen zweiten Share an.
   Wirkt **nicht rückwirkend**, also gleich richtig setzen.
 - Unterordner (`documents/alex`, `media/fotos` …) im Finder anlegen, nicht in Unraid.
 
-`SETTINGS → SMB → Enable: Yes`, dann am Mac `Cmd+K` → `smb://192.168.178.156`.
+`SETTINGS → SMB → Enable: Yes`, dann am Mac `Cmd+K` → `smb://<unraid-ip>`.
 
 > Bereits gemountete Shares sind im macOS-Verbindungsdialog **ausgegraut**.
 > Nach Rechteänderungen: Volume auswerfen, Server trennen, neu verbinden —
@@ -224,7 +225,7 @@ OCR-Verarbeitung). Aus Community Apps das großgeschriebene **"Redis"**
 manuell angelegte `redis.conf`.
 
 Defaults reichen. Läuft auf `bridge`, Port `6379` veröffentlicht
-→ erreichbar als `redis://192.168.178.156:6379`.
+→ erreichbar als `redis://<unraid-ip>:6379`.
 
 ### Paperless-ngx
 
@@ -234,7 +235,7 @@ Defaults reichen. Läuft auf `bridge`, Port `6379` veröffentlicht
 | Media | `/mnt/user/documents/paperless/media` |
 | Consumption | `/mnt/user/documents/paperless/consume` |
 | Export | `/mnt/user/documents/paperless/export` |
-| PAPERLESS_REDIS | `redis://192.168.178.156:6379` |
+| PAPERLESS_REDIS | `redis://<unraid-ip>:6379` |
 | PAPERLESS_OCR_LANGUAGE | `deu` |
 | PAPERLESS_OCR_LANGUAGES | `deu` |
 | PAPERLESS_TIME_ZONE | `Europe/Berlin` |
@@ -374,3 +375,4 @@ Paperless hinaus gelten:
 |---|---|
 | 16.08.2026 | Erstfassung. Stick-GUID dokumentiert, VM-Parameter festgelegt. |
 | 16.08.2026 | VM läuft. Array, Shares, Users, Docker, Redis, Paperless dokumentiert. Ende-zu-Ende-Test erfolgreich (Finder → consume → Paperless, PWA über VPN). Stolpersteine gesammelt. |
+| 26.08.2026 | Konkrete Adresse durch den Platzhalter `<unraid-ip>` ersetzt. Sie kommt per DHCP und ist damit ohnehin nicht stabil — als Anleitung taugt der Platzhalter besser, und auf einer öffentlichen Seite hat sie nichts verloren. |

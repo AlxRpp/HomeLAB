@@ -2,6 +2,16 @@
 
 **Stand:** 26.08.2026 · **Status:** in Betrieb seit 26.09.2025
 
+**Kurzfassung.** Home Assistant OS als VM auf Proxmox, seit September 2025
+in Betrieb. 201 Geräte über Zigbee2MQTT, Matter, Thread und WLAN, 927
+Entitäten (davon 107 reine Netzwerk-Clients). Sensor-Zeitreihen in zwei
+Stufen: Rohdaten 10 Tage, Langzeitstatistik dauerhaft. 3 von 8 Automationen
+laufen. MCP-Server für Modellzugriff läuft lokal.
+
+Die Geräte- und Datenebene ist stabil. Die Automationsebene trägt noch
+nicht — die Fehlversuche stehen in Abschnitt 6, die offenen Punkte in
+Abschnitt 8.
+
 Alle Zahlen in diesem Dokument sind am 26.08.2026 aus der laufenden
 Installation ausgelesen, nicht geschätzt. Wo etwas nicht ermittelbar war,
 steht **unklar** — nicht ein plausibler Wert.
