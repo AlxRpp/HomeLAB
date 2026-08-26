@@ -61,7 +61,7 @@ unterschiedlich:
 | Typ | Verhalten | Beispiel |
 |---|---|---|
 | **Entscheidung** | wird nie editiert, nur ersetzt. Die alte Begründung bleibt lesbar | „Unraid statt Proxmox" |
-| **Zustand** | wird überschrieben. Dafür ist die Versionskontrolle da | „Test-VM auf 192.168.178.156" |
+| **Zustand** | wird überschrieben. Dafür ist die Versionskontrolle da | „Test-VM läuft auf dem Proxmox-Host" |
 | **Anleitung** | wird verbessert | „So exportierst du Paperless" |
 
 Jede Entscheidung trägt ein Datum und eine Zeile **„Umwerfen würde das:"**.

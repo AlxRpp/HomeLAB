@@ -118,14 +118,64 @@ liegen und die Allocation-Method Dateien auf derselben Platte hält —
 → **Nach dem ersten Import verifizieren:**
 
 ```bash
-stat -c '%h  %n' "/mnt/user/media/filme/Irgendein Film (2024)/"*.mkv
+stat -c '%h  %n' /mnt/user/media/filme/*/*
 ```
 
 Erste Spalte ist der Link-Count. **`2` = Hardlink hat funktioniert.**
 `1` = es wurde kopiert, dann Allocation-Method und Split-Level des
 Shares nachjustieren.
 
-Das ist ein offener Punkt, kein gelöstes Problem (s. Abschnitt 7).
+**Ergebnis 17.08.2026:** Link-Count `2`. Aber siehe die nächste
+Konsequenz — dieser Test war irreführend.
+
+### Konsequenz 4: Der `media`-Share darf NICHT auf den Cache
+
+Am 17.08.2026 fast übersehen, und der wichtigste Fund des Tages.
+
+Unraid legt neue Shares standardmäßig mit *Primary storage: Cache* an.
+Downloads landen dann zuerst auf dem Cache-Pool, und der **Mover**
+schiebt sie nachts aufs Array. Klingt harmlos, ist es nicht:
+
+- **Der Hardlink überlebt den Mover nicht.** Radarr verlinkt, solange
+  beide Dateien auf dem Cache liegen. Verschiebt der Mover die
+  Download-Datei später aufs Array, liegen die beiden auf
+  verschiedenen Dateisystemen — der Link zerfällt zu zwei
+  unabhängigen Kopien. **Ab da liegt jeder Film doppelt**, ohne
+  Fehlermeldung.
+- **Der Cache läuft voll.** In der Test-VM: 12 GB Downloads plus 7 GB
+  `docker.img` auf einem 21-GB-Cache = 0 Byte frei.
+- **Und dann fällt alles um, was auf dem Cache lebt.** Jellyfin konnte
+  nicht mehr in seine SQLite-Datenbank schreiben:
+  `Microsoft.EntityFrameworkCore.Update: An exception occurred in the
+  database while saving changes`. Sieht aus wie ein Jellyfin-Bug, ist
+  eine volle Platte.
+
+**Der Hardlink-Test oben war deshalb ein Fehlalarm:** Er zeigte `2`,
+weil Download *und* Mediathek in dem Moment beide auf dem Cache lagen.
+Bestanden hätte er auch dann, wenn die Konfiguration falsch ist.
+
+→ **Shares → media → Primary storage: `Array`, Secondary storage: `None`.**
+
+Reihenfolge beim Umstellen eines bereits vollen Caches — die zählt:
+
+```bash
+# 1. Container stoppen, damit nichts in die Dateien schreibt
+docker compose down
+
+# 2. Mover laufen lassen, SOLANGE die Einstellung noch Cache → Array ist
+mover start
+watch -n 5 'df -h /mnt/cache | tail -1'
+
+# 3. ERST DANACH: Primary storage auf Array, Secondary auf None
+# 4. docker compose up -d
+```
+
+Stellt man zuerst um, weiß der Mover nicht mehr, dass er etwas
+wegräumen soll, und die Daten bleiben auf dem Cache liegen.
+
+**Nicht verwechseln mit der Regel aus `00-fundament.md`, Abschnitt 5.**
+Dort steht: `appdata` gehört auf den Cache. Das stimmt weiterhin —
+Datenbanken ja, Massendaten nein. `media` ist Massendaten.
 
 ---
 
@@ -230,6 +280,32 @@ siehst. Beides tragfähig; der Unterschied ist "weniger Handgriffe" gegen
 Bei **reinem Usenet** brauchst du keinen VPN für Downloads. Gluetun bleibt
 trotzdem sinnvoll für Prowlarr, weil Indexer-Anfragen sonst von deiner
 Heim-IP kommen.
+
+### `SERVER_COUNTRIES` ist Pflicht, nicht optional
+
+Am 17.08.2026 eine Stunde gekostet. **Proton erlaubt P2P nur in Ländern
+mit lockerem Urheberrecht** — Niederlande, Schweiz, Island, Schweden,
+Singapur. Auf allen anderen Servern, etwa UK, Deutschland oder USA, wird
+BitTorrent-Verkehr blockiert.
+
+`PORT_FORWARD_ONLY=on` reicht **nicht**. Das filtert auf
+Port-Forwarding-Fähigkeit, nicht auf P2P-Erlaubnis — das sind
+unterschiedliche Servermengen. Ohne `SERVER_COUNTRIES` landet man
+irgendwo, im konkreten Fall in London.
+
+**Das Fehlerbild ist tückisch, weil es wie ein Netzwerkproblem aussieht:**
+
+- Der Tunnel steht, Healthcheck grün
+- HTTP durch den Tunnel funktioniert einwandfrei
+- Tracker-Anmeldungen gehen durch — der ipleak-Torrent-Test besteht sogar
+- Nur die Peer-Verbindungen sterben nach wenigen Bytes, Status `Stalled`
+
+Man sucht dann bei MTU, Ports und Firewall, und nichts davon ist es. Es
+ist eine Richtlinie des Anbieters.
+
+```bash
+SERVER_COUNTRIES=Netherlands
+```
 
 ---
 
@@ -394,6 +470,30 @@ Ehrlichkeit über die Grenzen, sonst wiegt das Runbook in falscher Sicherheit:
   Muss separat geprüft werden.
 - **Dauerbetrieb** — eine Messung beweist nichts über drei Monate.
 
+### qBittorrent NICHT an `tun0` binden
+
+Viele Anleitungen — auch die TechHut-Vorlage — empfehlen, in qBittorrent
+unter *Erweitert* die **Netzwerkschnittstelle auf `tun0`** zu setzen.
+
+**In diesem Setup ist das falsch.** Es hilft nicht und es schadet:
+
+- **Redundant:** Der Container hat über `network_mode: service:gluetun`
+  gar kein eigenes Netzwerk. Es gibt keine zweite Route, an die er sich
+  binden könnte. Der Schutz sitzt im geteilten Namespace.
+- **Schädlich:** Die Bindung stört libtorrent beim Aufbau der
+  DHT-Sockets. Symptom: **`DHT: 0 nodes`**, dauerhaft, über
+  Serverwechsel hinweg. Damit fällt die halbe Peer-Findung aus, es
+  bleibt bei ein bis zwei Verbindungen, und der Download kriecht.
+
+Der Rat stammt aus Setups, in denen der Client ein **eigenes** Netzwerk
+hat und der VPN nur eine zusätzliche Route ist. Dort ist die Bindung
+sinnvoll. Hier nicht.
+
+→ *Optionen → Erweitert → Netzwerkschnittstelle:* **„Any interface"**
+
+Nach dem Umstellen **Test 3 erneut fahren** — am 17.08.2026 geprüft, der
+Kill-Switch hält ohne die Bindung unverändert (Timeout, Exit 1).
+
 ### Wann wiederholen
 
 - nach jeder Änderung an `compose.yaml` oder `.env`
@@ -404,7 +504,126 @@ Ehrlichkeit über die Grenzen, sonst wiegt das Runbook in falscher Sicherheit:
 
 ---
 
-## 6. Dateien
+## 6. Die Dienste miteinander verbinden
+
+Am 17.08.2026 einmal komplett durchgespielt. Die Stolpersteine stehen
+hier, damit der zweite Aufbau auf der echten Maschine eine Stunde statt
+eines Tages dauert.
+
+### Adressen: warum feste IPs statt Containernamen
+
+Der Stack zerfällt in **zwei Netzwerkwelten**:
+
+| Welt | Dienste | Adresse |
+|---|---|---|
+| Im gluetun-Namespace | gluetun, qBittorrent, NZBGet, Prowlarr, FlareSolverr | alle unter `172.39.0.2` |
+| Eigene Container | Radarr, Sonarr, Lidarr, Bazarr, Seerr, Jellyfin | eigene IP aus der `.env` |
+
+Container im gluetun-Namespace benutzen **gluetuns DNS-Resolver**, der
+nach außen zu Cloudflare geht — der kennt keine Docker-Containernamen.
+`http://radarr:7878` funktioniert von Prowlarr aus also **nicht**.
+Deshalb vergibt die compose feste IPs. Genau dafür sind sie da.
+
+Und qBittorrent hat kein eigenes Netzwerk: Seine WebUI hängt an gluetuns
+Adresse. In Radarr heißt der Download-Client-Host deshalb `gluetun`,
+nicht `localhost`.
+
+### Was wohin eingetragen wird
+
+| In | Feld | Wert |
+|---|---|---|
+| Radarr | Download Client → Host | `gluetun`, Port `8080` |
+| Radarr | Download Client → Category | `radarr` |
+| Radarr | Root Folder | `/data/filme` |
+| Prowlarr | Apps → Prowlarr Server | `http://172.39.0.2:9696` |
+| Prowlarr | Apps → Radarr Server | `http://172.39.0.4:7878` |
+| Seerr | Jellyfin URL | `172.39.0.8`, Port `8096` |
+| Seerr | Radarr Server | `172.39.0.4`, Port `7878` |
+
+API-Schlüssel stehen jeweils unter *Settings → General*. Jede *arr-App
+hat genau einen, und den benutzen alle, die mit ihr reden.
+
+### Fallstricke
+
+**Prowlarr-Tags.** Ein Indexer mit Tag wird **nur** an Apps mit
+demselben Tag weitergereicht. Wer einem Indexer zum Testen einen
+`flaresolverr`-Tag verpasst, wundert sich später, warum er in Radarr
+fehlt. Tag wieder entfernen, sobald er nicht gebraucht wird.
+
+**Öffentliche Indexer sind unzuverlässig.** Ihre Definitionen in
+Prowlarr hinken den ständigen Domain- und Strukturwechseln hinterher.
+Von den getesteten liefen etwa die Hälfte. `403 Forbidden` bedeutet
+meist nicht „VPN blockiert", sondern „Definition veraltet" — prüfbar
+mit einem direkten Abruf aus dem Container heraus:
+
+```bash
+docker exec gluetun wget -qO- --timeout=10 https://<indexer-domain>/ | head -20
+```
+
+Kommt normales HTML, ist die Seite erreichbar und der Fehler liegt in
+der Definition. FlareSolverr hilft dann nicht.
+
+**Jellyfin merkt neue Dateien nicht.** Die „Echtzeitüberwachung"
+stützt sich auf inotify, und das funktioniert auf Unraids
+FUSE-Layer `/mnt/user` nicht zuverlässig. Lösung ist nicht häufigeres
+Scannen, sondern eine Benachrichtigung:
+
+→ *Radarr → Settings → Connect → + → Emby/Jellyfin*, Host `172.39.0.8`,
+Port `8096`, Jellyfin-API-Schlüssel (aus *Dashboard → Erweitert →
+API-Schlüssel*), **Update Library** an, Trigger *On Import* und
+*On Upgrade*.
+
+**Seerr ignoriert PUID/PGID.** Läuft fest als `node` = UID 1000. Der
+appdata-Ordner braucht `chown -R 1000:1000`, sonst Startschleife mit
+`EACCES: permission denied, mkdir '/app/config/logs/'`. Einzige
+Ausnahme im ganzen Stack.
+
+**Seerr-Login = Jellyfin-Login.** Es gibt kein eigenes Passwort.
+
+### `Minimum Availability: Released` — nicht optional
+
+Steuert, ab wann Radarr überhaupt zu suchen beginnt:
+
+| Wert | Verhalten |
+|---|---|
+| `Announced` | sucht ab Ankündigung |
+| `In Cinemas` | sucht ab Kinostart |
+| `Released` | sucht ab digitaler Veröffentlichung |
+
+Bei den ersten beiden holt Radarr für einen Film, der noch im Kino
+läuft, zwangsläufig eine **Kino-Abfilmung** — es gibt nichts anderes.
+Am 17.08.2026 genau so passiert: eingebrannte Untertitel, unscharfes
+Bild, und die Datei hieß trotzdem `WEBDL-1080p`.
+
+Denn: Qualitätsprofile helfen nur gegen *ehrlich* benannte Releases.
+`CAM`, `TELESYNC`, `TELECINE`, `WORKPRINT` und `DVDSCR` sollte man im
+Profil abwählen — gegen bewusste Falschbenennung kann kein Werkzeug
+etwas ausrichten, weil niemand in die Datei hineinschaut. Der
+zuverlässige Schutz ist `Released`.
+
+### Dateibenennung für Jellyfin
+
+Radarr benennt nur um, wenn *Settings → Media Management →
+**Rename Movies*** aktiv ist. Standardmäßig ist es das nicht.
+
+```
+Standard Movie Format:  {Movie CleanTitle} ({Release Year}) {Quality Full}
+Movie Folder Format:    {Movie CleanTitle} ({Release Year}) [imdbid-{ImdbId}]
+```
+
+Das Feld für den Ordner erscheint erst über **Show Advanced**.
+
+Die **IMDb-ID im Ordnernamen** ist der Aufwand wert: Jellyfin muss dann
+nicht mehr raten und trifft auch bei deutschen Verleihtiteln, die vom
+Original abweichen, die richtigen Metadaten.
+
+Das Ordnerformat greift nur beim **Hinzufügen** eines Films. Bereits
+vorhandene behalten ihren Ordnernamen, bis man sie über den
+Film-Editor verschiebt.
+
+---
+
+## 7. Dateien
 
 Beides liegt in `media-stack/`:
 
@@ -424,7 +643,7 @@ enthält deinen VPN-Key. Beim Ablegen entsprechend behandeln.
 
 ---
 
-## 7. Reihenfolge bei der Umsetzung
+## 8. Reihenfolge bei der Umsetzung
 
 Nicht alles auf einmal. Nach jedem Schritt prüfen, ob er hält.
 
@@ -458,7 +677,7 @@ Nicht alles auf einmal. Nach jedem Schritt prüfen, ob er hält.
 
 ---
 
-## 8. Offene Punkte
+## 9. Offene Punkte
 
 - [x] ~~VPN-Anbieter wählen~~ — **ProtonVPN**, 17.08.2026. WireGuard,
       `VPN_PORT_FORWARDING=on` + `PORT_FORWARD_ONLY=on`. Getestet, siehe Abschnitt 5
@@ -484,7 +703,7 @@ Nicht alles auf einmal. Nach jedem Schritt prüfen, ob er hält.
 
 ---
 
-## 9. Was in `00-fundament.md` angepasst werden muss
+## 10. Was in `00-fundament.md` angepasst werden muss
 
 1. **Abschnitt 5 (Ordnerstruktur)** — `media/downloads/` mit den
    Unterordnern `qbittorrent/` und `nzbget/` ergänzen, plus einem Satz
@@ -495,6 +714,15 @@ Nicht alles auf einmal. Nach jedem Schritt prüfen, ob er hält.
    Verweis auf diese Datei. Bewusst *nach* der Backup-Kette: der Stack
    erzeugt schnell viele Terabyte, und die Backup-Entscheidung
    (was wird gesichert, was nicht) will vorher getroffen sein.
+
+   **Ergänzung 17.08.2026:** Die Regel in Abschnitt 5 lautet bisher
+   „`appdata` gehört auf den Cache". Sie braucht die Umkehrung als
+   eigenen Satz: **Massendaten-Shares gehören explizit auf `Array`,
+   nicht auf Cache.** Unraid legt neue Shares standardmäßig mit
+   *Primary storage: Cache* an — man muss aktiv umstellen. Sonst
+   laufen Cache-Pool und damit auch alle Datenbanken darauf voll,
+   und Hardlinks zerfallen still, sobald der Mover läuft
+   (Begründung in Abschnitt 2, Konsequenz 4).
 
 3. **Abschnitt 9 (Offene Punkte)** — VPN-Anbieter mit Port-Forwarding
    als neuer Punkt.
@@ -508,5 +736,6 @@ Nicht alles auf einmal. Nach jedem Schritt prüfen, ob er hält.
 | Datum | Änderung |
 |---|---|
 | 17.08.2026 | Erstfassung. TechHut-Vorlage gesichtet und für Unraid angepasst (PUID 99:100, absolute appdata-Pfade, CIFS/LXC-Teile gestrichen). Hardlink-Problematik als zentraler Planungspunkt dokumentiert. Jellyseerr → Seerr korrigiert. VPN-Anbieter recherchiert, noch nicht entschieden. |
+| 17.08.2026 | Kompletter Durchlauf: Prowlarr, Radarr, Seerr, Jellyfin. Neuer Abschnitt 6 mit Verkabelung und Fallstricken. **Wichtigster Fund: `media` darf nicht auf den Cache** — sonst zerfallen Hardlinks beim Mover und der Cache läuft voll (Abschnitt 2, Konsequenz 4). Der Hardlink-Test vom Vormittag war dadurch ein Fehlalarm. |
 | 17.08.2026 | qBittorrent aufgesetzt, Test 5 (Torrent-IP über ipleak.net) bestanden. Dynamisches Port-Forwarding über `VPN_PORT_FORWARDING_UP_COMMAND` eingerichtet — die Befehle stehen in `.env.example`, damit sie versioniert sind, da die echte `.env` bewusst nicht ins Repo geht. |
 | 17.08.2026 | **ProtonVPN gewählt** (dynamischer Port via NAT-PMP, gluetun unterstützt das nativ). Gluetun in der Test-VM aufgesetzt, Tests 1–4 bestanden. Neuer Abschnitt 5 als Runbook, Rest neu nummeriert. `TORRENTING_PORT` aus der `compose.yaml` entfernt — bei Proton ist der Port dynamisch. |

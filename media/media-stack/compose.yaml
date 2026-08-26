@@ -222,14 +222,21 @@ services:
         ipv4_address: ${SET_IP_BAZARR}
 
   # Nachfolger von Overseerr und Jellyseerr (Merge Februar 2026).
+  #
+  # ACHTUNG, Ausnahme im ganzen Stack: Dieses Image ignoriert PUID/PGID
+  # und läuft fest als "node:node" = UID/GID 1000. Der appdata-Ordner
+  # muss deshalb 1000:1000 gehören, nicht 99:100 wie überall sonst:
+  #
+  #   chown -R 1000:1000 /mnt/user/appdata/seerr
+  #
+  # Ohne das startet der Container nicht und wirft in Dauerschleife
+  # "EACCES: permission denied, mkdir '/app/config/logs/'".
   seerr:
     image: ghcr.io/seerr-team/seerr:latest
     container_name: seerr
     restart: unless-stopped
     environment:
       - LOG_LEVEL=info
-      - PUID=${PUID}
-      - PGID=${PGID}
       - TZ=${TZ}
     volumes:
       - /mnt/user/appdata/seerr:/app/config
@@ -263,8 +270,14 @@ services:
     volumes:
       - /mnt/user/appdata/jellyfin:/config
       - /mnt/user/media:/data
-    devices:
-      - /dev/dri:/dev/dri
+    # AUF DER ECHTEN MASCHINE EINKOMMENTIEREN — Intel Quick Sync.
+    # In der Proxmox-Test-VM gibt es kein /dev/dri (kein iGPU-Passthrough),
+    # der Container würde nicht starten. Ohne Quick Sync läuft Jellyfin
+    # trotzdem, transcodiert dann aber auf der CPU. Solange der Client das
+    # Format direkt abspielen kann (Direct Play), wird gar nicht
+    # transcodiert und es fällt nicht auf.
+    #devices:
+    #  - /dev/dri:/dev/dri
     ports:
       - 8096:8096
       - 7359:7359/udp   # Service Discovery
